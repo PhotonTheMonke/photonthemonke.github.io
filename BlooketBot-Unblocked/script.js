@@ -1978,26 +1978,26 @@ function genMessage(msg, amt) {
   return t;
 }
 //firebase code
-async function connect(gid, name, icog, reqbody = !1) {
+async function connect(gid, name, icog, reqbody = false) {
   botinfo.connected = false;
   botinfo.connecting = true;
   botinfo.name = name;
   botinfo.gid = gid;
   updateStatus("Fetching token...");
+
+  // Join logic: fetch the token from the server
   const body = reqbody
     ? reqbody
-    : await fetch("join", {
-        body: JSON.stringify({
-          id: gid,
-          name: name,
-        }),
-        headers: {
-          "Content-Type": "application/json",
-        },
+    : await fetch("/join", { // make sure this points to the right join endpoint
         method: "POST",
-      }).then((e) => e.json());
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: gid, name })
+      }).then(res => res.json());
+
   updateStatus("Connecting to game...");
+
   if (body.success) {
+    // Initialize Firebase shard
     const liveApp = initializeApp(
       {
         apiKey: "AIzaSyCA-cTOnX19f6LFnDVVsHXya3k6ByP_MnU",
@@ -2007,42 +2007,46 @@ async function connect(gid, name, icog, reqbody = !1) {
         messagingSenderId: "741533559105",
         appId: "1:741533559105:web:b8cbb10e6123f2913519c0",
         measurementId: "G-S3H5NGN10Z",
-        databaseURL: body.fbShardURL,
+        databaseURL: body.fbShardURL
       },
       Date.now().toString()
     );
+
     const auth = getAuth(liveApp);
     await signInWithCustomToken(auth, body.fbToken);
+
     const db = getDatabase(liveApp);
+
+    // Spawn the single bot once
     await set(ref(db, `${gid}/c/${name}`), {
-      b: icog
-        ? fblooks[Math.floor(Math.random() * fblooks.length)]
-        : "Rainbow Astronaut",
-      rt: !0
+      b: icog ? fblooks[Math.floor(Math.random() * fblooks.length)] : "Rainbow Astronaut",
+      rt: true
     });
+
     botinfo.fbdb = db;
     botinfo.liveApp = liveApp;
     botinfo.connecting = false;
     botinfo.connected = true;
     updateStatus("Connected to game");
-    onValue(ref(db, `${gid}`), (data) => {
-      if (!botinfo.connected) {
-        return;
-      }
-      onUpdateData(data.val());
+
+    // Listen for updates
+    onValue(ref(db, `${gid}`), (snapshot) => {
+      if (!botinfo.connected) return;
+      onUpdateData(snapshot.val());
     });
-    onValue(ref(db, `${gid}/bu`), (data) => {
-      if (!botinfo.connected) {
-        return;
-      }
-      onBlock(data.val());
+
+    onValue(ref(db, `${gid}/bu`), (snapshot) => {
+      if (!botinfo.connected) return;
+      onBlock(snapshot.val());
     });
+
   } else {
     updateStatus("Ready");
     botinfo.connecting = false;
     errorBar("Connect error: " + body.msg);
   }
 }
+
 
 function bypassFilter(str) {
   return str
